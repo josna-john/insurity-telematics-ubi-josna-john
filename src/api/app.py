@@ -2,29 +2,28 @@ from __future__ import annotations
 from fastapi import FastAPI, Body, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
-import os, io, json
-from catboost import CatBoostRegressor
+import os, io, json, tempfile
 import numpy as np
+from pathlib import Path
+from catboost import CatBoostRegressor
 
 from src.features.featurize import featurize_trip
 from src.data.loader import validate_record
-from pathlib import Path
-import tempfile
+from src.gamification.badges import make_badges
 
 APP_MODEL_PATH = os.getenv("MODEL_PATH", "models/gbm_risk.cbm")
 APP_FEATS_PATH = os.getenv("FEATNAMES_PATH", "models/gbm_risk_features.json")
 
-app = FastAPI(title="Telematics UBI Scoring API", version="0.1.0")
+app = FastAPI(title="Telematics UBI Scoring API", version="0.2.0")
 
-# Load model & feature order at startup
-_model = CatBoostRegressor()
-_model.load_model(APP_MODEL_PATH)
+_model = CatBoostRegressor(); _model.load_model(APP_MODEL_PATH)
 with open(APP_FEATS_PATH, "r", encoding="utf-8") as f:
     _feat_names = json.load(f)
 
 class ScoreResponse(BaseModel):
     risk_score: float
     top_contributors: Optional[List[dict]] = None
+    badges: Optional[List[dict]] = None
 
 def _assemble_vector(feats: dict, names):
     row = [feats[n] for n in names]
@@ -35,8 +34,7 @@ def health():
     return {"status": "ok"}
 
 @app.post("/score/trip", response_model=ScoreResponse)
-def score_trip(records: List[dict] = Body(..., description="Array of telemetry records with required fields")):
-    # Validate quickly and write to a temp JSONL for reuse of featurize_trip
+def score_trip(records: List[dict] = Body(...)):
     for i, rec in enumerate(records, 1):
         ok, msg = validate_record(rec)
         if not ok:
@@ -49,10 +47,8 @@ def score_trip(records: List[dict] = Body(..., description="Array of telemetry r
 
     feats = featurize_trip(Path(tmp_path))
     X = _assemble_vector(feats, _feat_names)
-    score = float(_model.predict(X)[0])
-    score = max(0.0, min(1.0, score))
+    score = float(_model.predict(X)[0]); score = max(0.0, min(1.0, score))
 
-    # lightweight contributors with SHAP
     import shap
     explainer = shap.TreeExplainer(_model)
     sv = explainer.shap_values(X)[0]
@@ -61,23 +57,18 @@ def score_trip(records: List[dict] = Body(..., description="Array of telemetry r
         key=lambda d: abs(d["value"]), reverse=True
     )[:8]
 
-    try:
-        os.remove(tmp_path)
-    except OSError:
-        pass
+    try: os.remove(tmp_path)
+    except OSError: pass
 
-    return {"risk_score": score, "top_contributors": pairs}
+    return {"risk_score": score, "top_contributors": pairs, "badges": make_badges(feats)}
 
 @app.post("/score/jsonl", response_model=ScoreResponse)
 def score_jsonl(jsonl_text: str = Body(..., media_type="text/plain")):
-    # Parse JSONL from raw text
     records = []
     for i, line in enumerate(io.StringIO(jsonl_text), 1):
         line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
+        if not line: continue
+        try: rec = json.loads(line)
         except Exception as e:
             raise HTTPException(400, f"Bad JSON at line {i}: {e}")
         ok, msg = validate_record(rec)

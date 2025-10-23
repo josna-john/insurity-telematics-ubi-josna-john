@@ -7,9 +7,10 @@ import numpy as np
 from catboost import CatBoostRegressor, Pool
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
+from src.models.constraints import make_constraints
 
 EXCLUDE_COLS = {
-    "trip_id","driver_id","mode","target"  # meta/labels
+    "trip_id","driver_id","mode","target"
 }
 
 def build_features(df: pd.DataFrame):
@@ -22,23 +23,27 @@ def main():
     ap.add_argument("--data", default="data/training/features.csv")
     ap.add_argument("--model-out", default="models/gbm_risk.cbm")
     ap.add_argument("--featnames-out", default="models/gbm_risk_features.json")
+    ap.add_argument("--iterations", type=int, default=600)
     args = ap.parse_args()
 
     Path("models").mkdir(parents=True, exist_ok=True)
-
     df = pd.read_csv(args.data)
     y = df["target"].values
     X, feat_names = build_features(df)
+
+    # constraints aligned with feat_names
+    mono = make_constraints(feat_names)
 
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=42)
 
     model = CatBoostRegressor(
         loss_function="RMSE",
         depth=6,
-        learning_rate=0.1,
-        iterations=500,
+        learning_rate=0.08,
+        iterations=args.iterations,
         random_seed=42,
-        verbose=False
+        verbose=False,
+        monotone_constraints=mono  # <-- the magic
     )
 
     model.fit(Pool(X_train, label=y_train), eval_set=Pool(X_val, label=y_val))
@@ -54,6 +59,7 @@ def main():
         json.dump(feat_names, f, indent=2)
     print(f"Saved model to {args.model_out}")
     print(f"Saved feature names to {args.featnames_out}")
+    print("Applied monotonic constraints to selected features.")
 
 if __name__ == "__main__":
     main()
