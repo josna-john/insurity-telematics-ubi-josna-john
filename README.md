@@ -107,4 +107,21 @@ python .\bin\price_trip.py --trip .\data\samples\trip_eval.jsonl --base-premium 
 
 ---
 
+## Real-time demo (streaming)
 
+# Start API:
+```bash
+uvicorn src.api.app:app --reload
+```
+
+# Send chunks:
+```bash
+$lines = Get-Content .\data\samples\trip_stream.jsonl
+# (see repo instructions for the loop that posts 5 chunks)
+```
+
+### Pricing sensitivity plot
+```bash
+python -m src.models.price_curve --base-premium 120 --floor 0.75 --cap 1.5 --slope 1.75 --outdir .\docs\pricing
+```
+# Artifacts: `docs/pricing/price_curve_factor.png`, `docs/pricing/price_curve_premium.png`
