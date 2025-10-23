@@ -1,12 +1,12 @@
 {
   "risk_score": 0.8579801976851598,
-  "premium_factor": 1.5,
-  "premium": 180.0,
+  "premium_factor": 1.8,
+  "premium": 216.0,
   "params": {
     "base_premium": 120.0,
-    "floor": 0.75,
-    "cap": 1.5,
-    "slope": 1.75,
+    "floor": 0.85,
+    "cap": 1.8,
+    "slope": 1.2,
     "intercept": 0.0,
     "territory_mult": 1.0,
     "vehicle_mult": 1.0
