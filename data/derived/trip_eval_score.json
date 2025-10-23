@@ -1,0 +1,39 @@
+{
+  "trip_id": "trip_eval",
+  "driver_id": "drv_001",
+  "risk_score": 0.8579801976851598,
+  "top_contributors": [
+    {
+      "feature": "hard_brake_rate_100km",
+      "value": 0.09671578262653176
+    },
+    {
+      "feature": "p95_speed",
+      "value": 0.0663896712141803
+    },
+    {
+      "feature": "corner_rate_100km",
+      "value": 0.06372512782667908
+    },
+    {
+      "feature": "jerk_p95",
+      "value": 0.040585867951871454
+    },
+    {
+      "feature": "std_speed",
+      "value": 0.038047021029745914
+    },
+    {
+      "feature": "hard_brakes",
+      "value": 0.033587631201364355
+    },
+    {
+      "feature": "jerk_mean",
+      "value": 0.021010483868029436
+    },
+    {
+      "feature": "p50_speed",
+      "value": 0.014879475984816488
+    }
+  ]
+}

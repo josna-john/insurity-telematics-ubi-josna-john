@@ -1,0 +1,53 @@
+{
+  "trip_id": "trip_eval",
+  "top_contributors": [
+    {
+      "feature": "hard_brake_rate_100km",
+      "value": 0.09671578262653176
+    },
+    {
+      "feature": "p95_speed",
+      "value": 0.0663896712141803
+    },
+    {
+      "feature": "corner_rate_100km",
+      "value": 0.06372512782667908
+    },
+    {
+      "feature": "jerk_p95",
+      "value": 0.040585867951871454
+    },
+    {
+      "feature": "std_speed",
+      "value": 0.038047021029745914
+    },
+    {
+      "feature": "hard_brakes",
+      "value": 0.033587631201364355
+    },
+    {
+      "feature": "jerk_mean",
+      "value": 0.021010483868029436
+    },
+    {
+      "feature": "p50_speed",
+      "value": 0.014879475984816488
+    },
+    {
+      "feature": "avg_speed",
+      "value": 0.013678025872439586
+    },
+    {
+      "feature": "dist_km",
+      "value": 0.013278403228975352
+    },
+    {
+      "feature": "rain_mile_share",
+      "value": 0.011599240871932256
+    },
+    {
+      "feature": "cornering_events",
+      "value": 0.0025384550572952274
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  "n_records",
+  "hz",
+  "duration_sec",
+  "dist_km",
+  "hard_brakes",
+  "harsh_accels",
+  "cornering_events",
+  "hard_brake_rate_100km",
+  "harsh_accel_rate_100km",
+  "corner_rate_100km",
+  "speeding_exposure",
+  "night_mile_share",
+  "rain_mile_share",
+  "idle_share",
+  "avg_speed",
+  "p50_speed",
+  "p95_speed",
+  "std_speed",
+  "jerk_mean",
+  "jerk_p95"
+]

@@ -1,0 +1,5 @@
+{
+  "python.defaultInterpreterPath": "D:/dev/insurity-telematics-ubi-josna-john/.venv/Scripts/python.exe",
+  "python.analysis.extraPaths": ["./src"],
+  "python.analysis.typeCheckingMode": "basic"
+}
