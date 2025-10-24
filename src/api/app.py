@@ -6,6 +6,8 @@ import os, io, json, uuid, tempfile
 from pathlib import Path
 import numpy as np
 from fastapi.responses import RedirectResponse, Response
+import joblib, os, json
+from pathlib import Path
 
 from catboost import CatBoostRegressor
 import shap
@@ -35,10 +37,22 @@ def favicon():
 
 
 
-# Load model & feature order at startup
-_model = CatBoostRegressor(); _model.load_model(APP_MODEL_PATH)
-with open(APP_FEATS_PATH, "r", encoding="utf-8") as f:
-    _feat_names = json.load(f)
+# # Load model & feature order at startup
+# _model = CatBoostRegressor(); _model.load_model(APP_MODEL_PATH)
+# with open(APP_FEATS_PATH, "r", encoding="utf-8") as f:
+#     _feat_names = json.load(f)
+def load_any_model(path):
+    p = Path(path)
+    if p.suffix == ".cbm":
+        from catboost import CatBoostRegressor
+        m = CatBoostRegressor(); m.load_model(str(p)); return m, "catboost"
+    elif p.suffix in {".joblib", ".pkl"}:
+        m = joblib.load(p); return m, "sklearn"
+    else:
+        raise ValueError(f"Unknown model type: {p.suffix}")
+
+_model, _model_kind = load_any_model(APP_MODEL_PATH)
+_feat_names = json.loads(Path(APP_FEATS_PATH).read_text(encoding="utf-8"))
 
 _explainer = shap.TreeExplainer(_model)
 

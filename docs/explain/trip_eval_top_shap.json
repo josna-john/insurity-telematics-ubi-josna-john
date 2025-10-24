@@ -2,52 +2,52 @@
   "trip_id": "trip_eval",
   "top_contributors": [
     {
-      "feature": "hard_brake_rate_100km",
-      "value": 0.09671578262653176
-    },
-    {
-      "feature": "p95_speed",
-      "value": 0.0663896712141803
+      "feature": "cornering_events",
+      "value": 0.06025847237642514
     },
     {
       "feature": "corner_rate_100km",
-      "value": 0.06372512782667908
+      "value": 0.059373057310969556
     },
     {
-      "feature": "jerk_p95",
-      "value": 0.040585867951871454
-    },
-    {
-      "feature": "std_speed",
-      "value": 0.038047021029745914
-    },
-    {
-      "feature": "hard_brakes",
-      "value": 0.033587631201364355
-    },
-    {
-      "feature": "jerk_mean",
-      "value": 0.021010483868029436
-    },
-    {
-      "feature": "p50_speed",
-      "value": 0.014879475984816488
-    },
-    {
-      "feature": "avg_speed",
-      "value": 0.013678025872439586
+      "feature": "p95_speed",
+      "value": 0.05539749924164389
     },
     {
       "feature": "dist_km",
-      "value": 0.013278403228975352
+      "value": 0.04484420632505856
+    },
+    {
+      "feature": "std_speed",
+      "value": 0.04091389993998067
+    },
+    {
+      "feature": "avg_speed",
+      "value": 0.03251614994819044
+    },
+    {
+      "feature": "hard_brake_rate_100km",
+      "value": 0.03070977438949476
+    },
+    {
+      "feature": "jerk_p95",
+      "value": 0.02830789989921974
+    },
+    {
+      "feature": "jerk_mean",
+      "value": 0.025473620622163812
+    },
+    {
+      "feature": "p50_speed",
+      "value": 0.013789343430988435
     },
     {
       "feature": "rain_mile_share",
-      "value": 0.011599240871932256
+      "value": 0.011053849895470232
     },
     {
-      "feature": "cornering_events",
-      "value": 0.0025384550572952274
+      "feature": "hard_brakes",
+      "value": 0.004781388583595793
     }
   ]
 }

@@ -1,37 +1,102 @@
+# from __future__ import annotations
+# import argparse
+# from pathlib import Path
+# import numpy as np
+# import pandas as pd
+# import matplotlib.pyplot as plt
+# from math import log
+# from src.models.pricing import price_from_risk
+
+# def _logit(x: float, eps: float = 1e-6) -> float:
+#     x = min(1 - eps, max(eps, x))
+#     return log(x/(1-x))
+
+# def main():
+#     ap = argparse.ArgumentParser()
+#     ap.add_argument("--base-premium", type=float, default=100.0)
+#     ap.add_argument("--floor", type=float, default=0.75)
+#     ap.add_argument("--cap", type=float, default=1.50)
+#     ap.add_argument("--slope", type=float, default=1.75)
+#     # NEW: either pass intercept directly OR choose midrisk where factor1
+#     ap.add_argument("--intercept", type=float, default=0.0)
+#     ap.add_argument("--midrisk", type=float, default=0.50,
+#                     help="If --intercept not set, compute it so factor1 at this risk (default 0.50)")
+#     ap.add_argument("--outdir", default="docs/pricing")
+#     args = ap.parse_args()
+
+#     outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
+
+#     # Determine intercept
+#     if args.intercept is None:
+#         intercept = - args.slope * _logit(args.midrisk)
+#     else:
+#         intercept = args.intercept
+
+#     risks = np.linspace(0.01, 0.99, 99)
+#     rows = []
+#     for r in risks:
+#         p = price_from_risk(
+#             r,
+#             base_premium=args.base_premium,
+#             floor=args.floor,
+#             cap=args.cap,
+#             slope=args.slope,
+#             intercept=args.intercept,
+#         )
+#         rows.append({"risk": r, "premium_factor": p["premium_factor"], "premium": p["premium"]})
+#     df = pd.DataFrame(rows)
+#     df.to_csv(outdir / "price_curve.csv", index=False)
+
+#     # Plot premium factor vs risk
+#     plt.figure(figsize=(6,4))
+#     plt.plot(df["risk"], df["premium_factor"])
+#     plt.axhline(args.floor, linestyle="--")
+#     plt.axhline(args.cap, linestyle="--")
+#     plt.xlabel("Risk score")
+#     plt.ylabel("Premium factor")
+#     plt.title("Pricing Sensitivity (factor vs. risk)")
+#     plt.tight_layout()
+#     plt.savefig(outdir / "price_curve_factor.png", dpi=150)
+
+#     # Plot premium vs risk
+#     plt.figure(figsize=(6,4))
+#     plt.plot(df["risk"], df["premium"])
+#     plt.xlabel("Risk score")
+#     plt.ylabel("Premium ($)")
+#     plt.text(0.02, df["premium"].min()+1, f"min=${df['premium'].min():.2f}", fontsize=9)
+#     plt.text(0.62, df["premium"].max()-1, f"max=${df['premium'].max():.2f}", fontsize=9)
+#     plt.title(f"Premium vs. risk (base={args.base_premium})")
+#     plt.tight_layout()
+#     plt.savefig(outdir / "price_curve_premium.png", dpi=150)
+
+#     print(f"Wrote {outdir/'price_curve.csv'}, factor.png, premium.png")
+#     print(f"(slope={args.slope}, intercept={intercept:.3f}, floor={args.floor}, cap={args.cap})")
+
+# if __name__ == "__main__":
+#     main()
+
+
 from __future__ import annotations
-import argparse
+import argparse, json
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from math import log
-from src.models.pricing import price_from_risk
 
-def _logit(x: float, eps: float = 1e-6) -> float:
-    x = min(1 - eps, max(eps, x))
-    return log(x/(1-x))
+from src.models.pricing import price_from_risk
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base-premium", type=float, default=100.0)
-    ap.add_argument("--floor", type=float, default=0.75)
-    ap.add_argument("--cap", type=float, default=1.50)
-    ap.add_argument("--slope", type=float, default=1.75)
-    # NEW: either pass intercept directly OR choose midrisk where factor1
-    ap.add_argument("--intercept", type=float, default=0.0)
-    ap.add_argument("--midrisk", type=float, default=0.50,
-                    help="If --intercept not set, compute it so factor1 at this risk (default 0.50)")
+    ap.add_argument("--base-premium", type=float, default=120.0)
+    ap.add_argument("--floor", type=float, default=0.80)
+    ap.add_argument("--cap", type=float, default=1.40)
+    ap.add_argument("--slope", type=float, default=1.20)
     ap.add_argument("--outdir", default="docs/pricing")
     args = ap.parse_args()
 
     outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
 
-    # Determine intercept
-    if args.intercept is None:
-        intercept = - args.slope * _logit(args.midrisk)
-    else:
-        intercept = args.intercept
-
+    # build curve
     risks = np.linspace(0.01, 0.99, 99)
     rows = []
     for r in risks:
@@ -41,34 +106,51 @@ def main():
             floor=args.floor,
             cap=args.cap,
             slope=args.slope,
-            intercept=args.intercept,
         )
         rows.append({"risk": r, "premium_factor": p["premium_factor"], "premium": p["premium"]})
     df = pd.DataFrame(rows)
+    # Find risk where premium ≈ base (factor ≈ 1)
+    idx = (df["premium"] - args.base_premium).abs().idxmin()
+    x0  = float(df.loc[idx, "risk"])
+    y0  = float(df.loc[idx, "premium"])
+
     df.to_csv(outdir / "price_curve.csv", index=False)
 
-    # Plot premium factor vs risk
-    plt.figure(figsize=(6,4))
-    plt.plot(df["risk"], df["premium_factor"])
-    plt.axhline(args.floor, linestyle="--")
-    plt.axhline(args.cap, linestyle="--")
-    plt.xlabel("Risk score")
-    plt.ylabel("Premium factor")
-    plt.title("Pricing Sensitivity (factor vs. risk)")
-    plt.tight_layout()
-    plt.savefig(outdir / "price_curve_factor.png", dpi=150)
+    # --- Plot 1: premium factor vs risk with guardrail labels
+    fig, ax = plt.subplots(figsize=(6,4))
+    ax.plot(df["risk"], df["premium_factor"])
+    ax.set_xlabel("Risk score"); ax.set_ylabel("Premium factor")
+    ax.set_title("Pricing Sensitivity (factor vs. risk)")
+    # guardrails
+    ax.axhline(args.floor, linestyle="--")
+    ax.axhline(args.cap, linestyle="--")
+    ax.text(0.01, args.floor + 0.005, f"floor={args.floor:.2f}", fontsize=9)
+    ax.text(0.01, args.cap   + 0.005, f"cap={args.cap:.2f}", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(outdir / "price_curve_factor.png", dpi=150)
+    plt.close(fig)
 
-    # Plot premium vs risk
-    plt.figure(figsize=(6,4))
-    plt.plot(df["risk"], df["premium"])
-    plt.xlabel("Risk score")
-    plt.ylabel("Premium ($)")
-    plt.title(f"Premium vs. risk (base={args.base_premium})")
-    plt.tight_layout()
-    plt.savefig(outdir / "price_curve_premium.png", dpi=150)
+    # --- Plot 2: premium vs risk with min/max annotations
+    fig, ax = plt.subplots(figsize=(6,4))
+    ax.plot(df["risk"], df["premium"])
+    ax.scatter([x0], [y0], s=30)
+    ax.annotate(f"factor≈1 @ risk≈{x0:.2f}",
+                (x0, y0), xytext=(x0+0.03, y0+5),
+                arrowprops=dict(arrowstyle="->"), fontsize=9)
 
-    print(f"Wrote {outdir/'price_curve.csv'}, factor.png, premium.png")
-    print(f"(slope={args.slope}, intercept={intercept:.3f}, floor={args.floor}, cap={args.cap})")
+    ax.set_xlabel("Risk score"); ax.set_ylabel("Premium ($)")
+    ax.set_title(f"Premium vs. risk (base={args.base_premium:.1f})")
+    # annotate min/max
+    min_idx = int(df["premium"].idxmin()); max_idx = int(df["premium"].idxmax())
+    min_x, min_y = df.loc[min_idx, ["risk","premium"]]
+    max_x, max_y = df.loc[max_idx, ["risk","premium"]]
+    ax.text(min_x + 0.02, min_y + 1.0, f"min=${min_y:.2f}", fontsize=9)
+    ax.text(max_x - 0.20, max_y - 1.0, f"max=${max_y:.2f}", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(outdir / "price_curve_premium.png", dpi=150)
+    plt.close(fig)
+
+    print(f"Wrote {outdir/'price_curve.csv'}, price_curve_factor.png, price_curve_premium.png")
 
 if __name__ == "__main__":
     main()
