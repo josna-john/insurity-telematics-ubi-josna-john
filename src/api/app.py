@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 import os, io, json, uuid, tempfile
 from pathlib import Path
 import numpy as np
+from fastapi.responses import RedirectResponse, Response
 
 from catboost import CatBoostRegressor
 import shap
@@ -21,9 +22,17 @@ APP_MODEL_PATH = os.getenv("MODEL_PATH", "models/gbm_risk.cbm")
 APP_FEATS_PATH = os.getenv("FEATNAMES_PATH", "models/gbm_risk_features.json")
 
 app = FastAPI(title="Telematics UBI Scoring API", version="0.3.0")
-@app.get("/")
+# Handle GET and HEAD explicitly
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def root():
+    # Return 200 for both GET and HEAD
     return {"service": "insurity-ubi-api", "status": "ok", "docs": "/docs", "health": "/health"}
+
+# Avoid 404 on favicon probes
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
 
 
 # Load model & feature order at startup
