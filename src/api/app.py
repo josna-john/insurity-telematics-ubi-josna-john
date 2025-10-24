@@ -9,6 +9,10 @@ import numpy as np
 from catboost import CatBoostRegressor
 import shap
 
+import os
+from fastapi import Depends
+from src.api.security import require_api_key
+
 from src.features.featurize import featurize_trip
 from src.data.loader import validate_record
 from src.gamification.badges import make_badges
@@ -40,7 +44,7 @@ def _assemble_vector(feats: dict, names):
 def health():
     return {"status": "ok"}
 
-@app.post("/score/trip", response_model=ScoreResponse)
+@app.post("/score/trip", response_model=ScoreResponse, dependencies=[Depends(require_api_key)])
 def score_trip(records: List[dict] = Body(...)):
     # Validate and write to temp JSONL (reuse featurizer)
     for i, rec in enumerate(records, 1):
@@ -67,7 +71,7 @@ def score_trip(records: List[dict] = Body(...)):
 
     return {"risk_score": score, "top_contributors": pairs, "badges": make_badges(feats)}
 
-@app.post("/score/jsonl", response_model=ScoreResponse)
+@app.post("/score/jsonl", response_model=ScoreResponse, dependencies=[Depends(require_api_key)])
 def score_jsonl(jsonl_text: str = Body(..., media_type="text/plain")):
     records = []
     for i, line in enumerate(io.StringIO(jsonl_text), 1):
@@ -91,7 +95,7 @@ class StreamChunk(BaseModel):
     session_id: Optional[str] = None
     records: List[dict]
 
-@app.post("/score/stream", response_model=ScoreResponse)
+@app.post("/score/stream", response_model=ScoreResponse, dependencies=[Depends(require_api_key)])
 def score_stream(chunk: StreamChunk):
     # create or get session
     sid = chunk.session_id or str(uuid.uuid4())
@@ -131,7 +135,7 @@ def score_stream(chunk: StreamChunk):
         "badges": make_badges(feats),
     }
 
-@app.delete("/score/stream/{session_id}")
+@app.delete("/score/stream/{session_id}", dependencies=[Depends(require_api_key)])
 def reset_stream(session_id: str):
     _sessions.pop(session_id, None)
     return {"session_id": session_id, "status": "cleared"}

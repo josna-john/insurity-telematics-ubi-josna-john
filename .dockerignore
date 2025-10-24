@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+docs/
+notebooks/
+dist/
+.DS_Store
+.git
+.gitignore
+.vscode/

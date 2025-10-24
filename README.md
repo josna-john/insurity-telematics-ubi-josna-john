@@ -112,7 +112,10 @@ python .\bin\price_trip.py --trip .\data\samples\trip_eval.jsonl --base-premium 
 # Start API:
 ```bash
 uvicorn src.api.app:app --reload
+# Set API_KEY env var; every request must include X-API-Key header.
+
 ```
+
 
 # Send chunks:
 ```bash
@@ -125,3 +128,19 @@ $lines = Get-Content .\data\samples\trip_stream.jsonl
 python -m src.models.price_curve --base-premium 120 --floor 0.75 --cap 1.5 --slope 1.75 --outdir .\docs\pricing
 ```
 # Artifacts: `docs/pricing/price_curve_factor.png`, `docs/pricing/price_curve_premium.png`
+
+
+### How the pricing stub works (plain English)
+We start from a **base premium** (e.g., \$120). The model outputs a **risk_score** in [0,1]. We turn that into a **premium_factor** using a GLM-style curve:
+
+**premium_factor = exp(intercept + slope × logit(risk_score))**, then we **clamp** it between **floor** and **cap**.
+
+- **base_premium**: your starting price before behavior (e.g., \$120).
+- **floor**: the biggest **discount** allowed (e.g., 0.80 = at most 20% off).
+- **cap**: the biggest **surcharge** allowed (e.g., 1.40 = at most 40% extra).
+- **slope**: how **sensitive** price is to risk. Higher slope = steeper change around the midpoint.
+- **intercept**: shifts the curve left/right. With intercept=0, factor≈1.0 at risk≈0.5.  
+  Negative intercept → cheaper at the same risk (midpoint < 0.5). Positive → pricier (midpoint > 0.5).
+- **territory_mult / vehicle_mult**: placeholders for traditional rating factors you’d multiply in.
+
+Finally, **premium = base_premium × premium_factor**. Guardrails (floor/cap) keep prices stable and filing-friendly.
