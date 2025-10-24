@@ -21,6 +21,10 @@ APP_MODEL_PATH = os.getenv("MODEL_PATH", "models/gbm_risk.cbm")
 APP_FEATS_PATH = os.getenv("FEATNAMES_PATH", "models/gbm_risk_features.json")
 
 app = FastAPI(title="Telematics UBI Scoring API", version="0.3.0")
+@app.get("/")
+def root():
+    return {"service": "insurity-ubi-api", "status": "ok", "docs": "/docs", "health": "/health"}
+
 
 # Load model & feature order at startup
 _model = CatBoostRegressor(); _model.load_model(APP_MODEL_PATH)
