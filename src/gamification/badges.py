@@ -1,7 +1,18 @@
 from __future__ import annotations
 from typing import List, Dict
 
-# simple thresholds; adjust later
+"""
+Gamification badge assignment from trip-level features.
+
+Badges are awarded using simple threshold rules on safety-related features:
+  - Smooth Operator: low hard_brake_rate_100km
+  - Speed Limit Hero: low speeding_exposure
+  - Gentle Handling: low jerk_p95
+  - Daylight Driver: low night_mile_share
+
+Each badge can be awarded at "gold" or "silver" tiers.
+"""
+
 THR = {
     "hard_brake_rate_100km": {"gold": 2, "silver": 5},
     "speeding_exposure": {"gold": 0.02, "silver": 0.05},
@@ -9,7 +20,20 @@ THR = {
     "night_mile_share": {"gold": 0.05, "silver": 0.10},  # lower is safer
 }
 
+
 def make_badges(feats: Dict) -> List[Dict]:
+    """
+    Derive gamification badges based on trip-level features.
+
+    Args:
+        feats: Feature mapping produced by featurize_trip().
+
+    Returns:
+        List[Dict]: Zero or more badges with fields:
+            - name: Badge display name.
+            - tier: "gold" | "silver".
+            - reason: Short rationale tied to threshold(s).
+    """
     badges: List[Dict] = []
 
     # Smooth Operator (few hard brakes)

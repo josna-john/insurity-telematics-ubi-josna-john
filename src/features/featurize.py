@@ -9,11 +9,20 @@ import pandas as pd
 
 from src.data.loader import load_jsonl, infer_hz
 
-# Thresholds (m/s^2, m/s)  tweakable
-HARD_BRAKE_THR = -3.0
-HARSH_ACCEL_THR =  2.5
-CORNER_THR = 2.5
-IDLE_SPEED_THR = 0.5  # ~1.1 mph
+"""
+Trip featurization for telematics JSONL.
+
+Converts per-sample telematics records (speed, acceleration, jerk, GPS, context)
+into a single-row feature vector suitable for modeling and pricing. Includes
+event rates per 100km, speed statistics, jerk statistics, exposure shares, and
+basic trip metadata (duration, distance, sampling rate).
+"""
+
+# Tunable thresholds (units in comments for clarity)
+HARD_BRAKE_THR = -3.0      # m/s^2
+HARSH_ACCEL_THR = 2.5      # m/s^2
+CORNER_THR = 2.5           # m/s^2 (lateral)
+IDLE_SPEED_THR = 0.5       # m/s  (~1.1 mph)
 
 # Proxy speed limits by road type (m/s)
 SPEED_LIMITS = {
@@ -22,24 +31,54 @@ SPEED_LIMITS = {
     "rural":   22.0,  # ~49 mph
 }
 
+
 def _speed_limit(row: Dict) -> float:
+    """
+    Return a proxy speed limit (m/s) based on road_type.
+
+    Args:
+        row: DataFrame row dict with key "road_type".
+
+    Returns:
+        float: Speed limit in meters/second.
+    """
     return SPEED_LIMITS.get(row["road_type"], 22.0)
 
+
 def featurize_trip(jsonl_path: Path) -> Dict:
+    """
+    Aggregate raw telematics JSONL into engineered trip-level features.
+
+    Features include:
+      - Trip metadata: n_records, hz, duration_sec, dist_km
+      - Event counts and normalized rates per 100km:
+            hard_brakes, harsh_accels, cornering_events,
+            hard_brake_rate_100km, harsh_accel_rate_100km, corner_rate_100km
+      - Exposure proxies:
+            speeding_exposure, night_mile_share, rain_mile_share, idle_share
+      - Speed statistics: avg_speed, p50_speed, p95_speed, std_speed
+      - Jerk statistics: jerk_mean, jerk_p95
+
+    Args:
+        jsonl_path: Path to JSON Lines file with one telematics record per line.
+
+    Returns:
+        dict: Single trip feature mapping (name -> value).
+    """
     rows = load_jsonl(jsonl_path)
     df = pd.DataFrame(rows)
     trip_id = str(df["trip_id"].iloc[0])
     driver_id = str(df["driver_id"].iloc[0])
 
-    # infer Hz & dt
+    # Sampling rate and time step
     hz = infer_hz(df["timestamp"].tolist())
     dt = 1.0 / max(hz, 1e-6)
 
-    # distance approximation (sum speed*dt)
+    # Distance approximation (sum of speed * dt)
     dist_m = float((df["speed_mps"] * dt).sum())
     dist_km = dist_m / 1000.0
 
-    # events
+    # Event counts
     hard_brakes = int((df["accel_long_mps2"] <= HARD_BRAKE_THR).sum())
     harsh_accels = int((df["accel_long_mps2"] >= HARSH_ACCEL_THR).sum())
     cornering = int((df["accel_lat_mps2"].abs() >= CORNER_THR).sum())
@@ -49,23 +88,23 @@ def featurize_trip(jsonl_path: Path) -> Dict:
     harsh_accel_rate_100km = harsh_accels * per_100km
     corner_rate_100km = cornering * per_100km
 
-    # speeding exposure proxy
+    # Speeding exposure proxy (fraction of time above road-type limit)
     sp_lim = df.apply(_speed_limit, axis=1)
-    speeding_exposure = float((df["speed_mps"] > sp_lim).mean())  # fraction of time
+    speeding_exposure = float((df["speed_mps"] > sp_lim).mean())
 
-    # shares
+    # Exposure shares
     night_mile_share = float((df["time_of_day"] == "night").mean())
     rain_mile_share = float((df["weather"] == "rain").mean())
     idle_share = float((df["speed_mps"] <= IDLE_SPEED_THR).mean())
 
-    # speed stats
+    # Speed statistics
     speed = df["speed_mps"].to_numpy()
     avg_speed = float(speed.mean())
     p50_speed = float(np.percentile(speed, 50))
     p95_speed = float(np.percentile(speed, 95))
     std_speed = float(speed.std(ddof=0))
 
-    # jerk stats (magnitude)
+    # Jerk statistics (magnitude)
     jerk = np.abs(df["jerk_mps3"].to_numpy())
     jerk_mean = float(jerk.mean())
     jerk_p95 = float(np.percentile(jerk, 95))
@@ -101,7 +140,19 @@ def featurize_trip(jsonl_path: Path) -> Dict:
     )
     return out
 
+
 def main():
+    """
+    CLI entry point to featurize a single JSONL trip file.
+
+    Args (via argparse):
+        --input (str): Path to trip JSONL (from simulate_stream.py).
+        --outdir (str): Output directory for CSV/JSON feature artifacts.
+
+    Behavior:
+        - Featurizes the input trip.
+        - Writes a single-row CSV and a JSON copy to the output directory.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, help="Path to trip JSONL (from simulate_stream.py)")
     ap.add_argument("--outdir", default="data/derived", help="Output directory for CSV/JSON")
@@ -113,7 +164,6 @@ def main():
 
     features = featurize_trip(in_path)
 
-    # Write single-row CSV and JSON
     csv_path = out_dir / f"{features['trip_id']}_features.csv"
     json_path = out_dir / f"{features['trip_id']}_features.json"
 
@@ -122,6 +172,7 @@ def main():
         json.dump(features, f, indent=2)
 
     print(f"Wrote:\n  {csv_path}\n  {json_path}")
+
 
 if __name__ == "__main__":
     main()

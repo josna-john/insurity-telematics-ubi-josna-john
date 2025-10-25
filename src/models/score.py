@@ -7,15 +7,55 @@ from catboost import CatBoostRegressor
 
 from src.features.featurize import featurize_trip
 
+"""
+Score a telematics trip with the trained GBM model.
+
+Reads a JSONL trip, computes engineered features, assembles the model
+input vector using a persisted feature order, and outputs a bounded
+risk score in [0, 1]. Optionally emits per-feature SHAP contributions.
+"""
+
+
 def load_feature_order(path: str | Path):
+    """
+    Load the persisted feature name order used at training time.
+
+    Args:
+        path: Path to a JSON file containing a list of feature names.
+
+    Returns:
+        List of feature names in the expected model order.
+    """
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def assemble_vector(feats: dict, feat_names):
+    """
+    Assemble a numeric row vector X from a feature dict and an ordered name list.
+
+    Args:
+        feats: Mapping of feature name -> value (from featurize_trip).
+        feat_names: Ordered list of feature names.
+
+    Returns:
+        NumPy array shaped (1, n_features) suitable for model.predict().
+    """
     row = [feats[name] for name in feat_names]
     return np.array(row, dtype=float).reshape(1, -1)
 
+
 def main():
+    """
+    CLI entry point.
+
+    Usage:
+        python -m src.models.score --input data/samples/trip.jsonl \
+            --model models/gbm_risk.cbm \
+            --featnames models/gbm_risk_features.json \
+            --out data/derived/risk_score.json \
+            [--with-shap --topk 8]
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, help="Path to trip JSONL")
     ap.add_argument("--model", default="models/gbm_risk.cbm")
@@ -41,11 +81,9 @@ def main():
     }
 
     if args.with_shap:
-        # CatBoost has plain feature importances; for SHAP-like, we can use PredictionValuesChange or SHAP package in explain.py.
-        import shap
+        import shap  # optional dependency; used only when requested
         explainer = shap.TreeExplainer(model)
         sv = explainer.shap_values(X)
-        # flatten and zip with names
         pairs = sorted(
             [{"feature": n, "value": float(v)} for n, v in zip(feat_names, sv[0])],
             key=lambda d: abs(d["value"]),
@@ -57,6 +95,7 @@ def main():
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
     print(json.dumps(out, indent=2))
+
 
 if __name__ == "__main__":
     main()

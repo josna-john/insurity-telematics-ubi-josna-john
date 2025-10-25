@@ -9,16 +9,47 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from src.models.constraints import make_constraints
 
+"""
+Train a CatBoost GBM risk model with monotonic constraints.
+
+Reads a feature matrix CSV (with a `target` column), applies monotonic
+constraints aligned to the feature order, trains a CatBoostRegressor,
+prints validation metrics, and saves both the model and the feature
+name order used for inference.
+"""
+
 EXCLUDE_COLS = {
-    "trip_id","driver_id","mode","target"
+    "trip_id", "driver_id", "mode", "target"
 }
 
+
 def build_features(df: pd.DataFrame):
+    """
+    Construct the model input matrix X and the ordered feature list.
+
+    Args:
+        df: DataFrame containing engineered features and a `target` column.
+
+    Returns:
+        X: NumPy array of shape (n_samples, n_features).
+        cols: Ordered list of feature names retained for modeling.
+    """
     cols = [c for c in df.columns if c not in EXCLUDE_COLS]
     X = df[cols].values
     return X, cols
 
+
 def main():
+    """
+    CLI entry point to train the GBM.
+
+    Usage:
+        python -m src.models.train_gbm \
+            --data data/training/features.csv \
+            --model-out models/gbm_risk.cbm \
+            --featnames-out models/gbm_risk_features.json \
+            --iterations 600
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/training/features.csv")
     ap.add_argument("--model-out", default="models/gbm_risk.cbm")
@@ -31,10 +62,12 @@ def main():
     y = df["target"].values
     X, feat_names = build_features(df)
 
-    # constraints aligned with feat_names
+    # Monotonic constraints aligned with feat_names
     mono = make_constraints(feat_names)
 
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.25, random_state=42
+    )
 
     model = CatBoostRegressor(
         loss_function="RMSE",
@@ -43,15 +76,15 @@ def main():
         iterations=args.iterations,
         random_seed=42,
         verbose=False,
-        monotone_constraints=mono  # <-- the magic
+        monotone_constraints=mono,
     )
 
     model.fit(Pool(X_train, label=y_train), eval_set=Pool(X_val, label=y_val))
 
     pred = model.predict(X_val)
-    mse  = mean_squared_error(y_val, pred)
+    mse = mean_squared_error(y_val, pred)
     rmse = float(np.sqrt(mse))
-    r2   = r2_score(y_val, pred)
+    r2 = r2_score(y_val, pred)
     print(f"Validation RMSE: {rmse:.4f} | R^2: {r2:.4f}")
 
     model.save_model(args.model_out)
@@ -60,6 +93,7 @@ def main():
     print(f"Saved model to {args.model_out}")
     print(f"Saved feature names to {args.featnames_out}")
     print("Applied monotonic constraints to selected features.")
+
 
 if __name__ == "__main__":
     main()

@@ -10,38 +10,90 @@ import random
 import time
 from datetime import datetime, timezone
 
+"""
+Telematics stream simulator.
 
-# Simple, self-contained simulator (no external deps)
+Generates JSONL records that resemble basic smartphone/OBD telematics with
+speed/acceleration/jerk, coarse GPS drift, heading, and simple context
+(time-of-day bucket, road type, weather). Modes ("smooth", "normal", "aggressive")
+control the distribution and frequency of harsh events.
+
+Example:
+  python bin/simulate_stream.py --mode aggressive --duration 60 --hz 10 \
+    --out data/samples/trip.jsonl --trip-id trip_001 --driver-id drv_001
+
+Outputs:
+  - One JSON object per line (JSONL). If --out "-" is used, writes to stdout.
+"""
+
 TIME_OF_DAY_BUCKETS = [("night", 0, 6), ("morning", 6, 12), ("midday", 12, 17), ("evening", 17, 21), ("night", 21, 24)]
 ROAD_TYPES = ["highway", "city", "rural"]
 WEATHER = ["clear", "rain", "snow", "fog"]
 
+
 def bucket_time_of_day(dt: datetime) -> str:
+    """
+    Map a datetime to a coarse time-of-day label.
+
+    Args:
+        dt: A timezone-aware datetime.
+
+    Returns:
+        str: One of {"night", "morning", "midday", "evening"} determined
+             by the hour of day.
+    """
     hour = dt.hour
     for name, start, end in TIME_OF_DAY_BUCKETS:
         if start <= hour < end:
             return name
     return "night"
 
+
 def random_walk(val, step, lo, hi):
+    """
+    Clamp a value after applying a uniform random perturbation.
+
+    Args:
+        val (float): Current value.
+        step (float): Maximum absolute perturbation added/subtracted.
+        lo (float): Lower bound after perturbation.
+        hi (float): Upper bound after perturbation.
+
+    Returns:
+        float: New value clamped to [lo, hi].
+    """
     val += random.uniform(-step, step)
     return max(lo, min(hi, val))
 
+
 def simulate_record(t0, i, hz, mode, driver_id, trip_id):
+    """
+    Synthesize a single telematics record at sample index i.
+
+    Args:
+        t0 (float): UNIX epoch seconds for trip start.
+        i (int): Sample index.
+        hz (int): Sampling rate (records per second).
+        mode (str): Driving mode {"smooth","normal","aggressive"}.
+        driver_id (str): Driver identifier.
+        trip_id (str): Trip identifier.
+
+    Returns:
+        dict: Record with timestamp (ISO-8601), driver/trip IDs, kinematic
+              fields (speed/accel/jerk), heading, coarse GPS, and context.
+    """
     dt = datetime.fromtimestamp(t0 + i / hz, tz=timezone.utc)
     tod = bucket_time_of_day(dt)
     road = random.choice(ROAD_TYPES)
     weather = random.choices(WEATHER, weights=[0.8, 0.15, 0.03, 0.02])[0]
 
-    # base dynamics per mode
     if mode == "smooth":
-        speed = random.uniform(12, 28)  # m/s ~ 2763 mph
+        speed = random.uniform(12, 28)
         accel_long = random.uniform(-0.5, 0.5)
         accel_lat = random.uniform(-0.2, 0.2)
         jerk = random.uniform(-0.5, 0.5)
     elif mode == "aggressive":
         speed = random.uniform(5, 33)
-        # occasional harsh events
         accel_long = random.uniform(-3.5, 2.5) if random.random() < 0.07 else random.uniform(-1.0, 1.0)
         accel_lat = random.uniform(-3.0, 3.0) if random.random() < 0.05 else random.uniform(-0.8, 0.8)
         jerk = random.uniform(-5.0, 5.0)
@@ -51,10 +103,8 @@ def simulate_record(t0, i, hz, mode, driver_id, trip_id):
         accel_lat = random.uniform(-0.5, 0.5)
         jerk = random.uniform(-1.5, 1.5)
 
-    # simple heading/gps drift (not geographically accurate)
     heading = (i * (random.uniform(0.05, 0.2))) % 360
-    # seed a pseudo gpx around a center
-    lat0, lon0 = 32.7157, -117.1611  # San Diego-ish
+    lat0, lon0 = 32.7157, -117.1611
     gps_lat = lat0 + math.sin(i / 300.0) * 0.01 + random.uniform(-1e-4, 1e-4)
     gps_lon = lon0 + math.cos(i / 300.0) * 0.01 + random.uniform(-1e-4, 1e-4)
 
@@ -75,7 +125,25 @@ def simulate_record(t0, i, hz, mode, driver_id, trip_id):
     }
     return rec
 
+
 def main():
+    """
+    CLI entry point to emit a JSONL trip.
+
+    Args (via argparse):
+        --mode {"normal","smooth","aggressive"}: Driving style. Default: normal
+        --duration (int): Trip length in seconds. Default: 60
+        --hz (int): Samples per second. Default: 10
+        --out (str): Output path or "-" for stdout. Default: data/samples/trip.jsonl
+        --realtime: If set, sleeps 1/hz between records to emulate live feed.
+        --driver-id (str): Driver identifier. Default: drv_001
+        --trip-id (str): Trip identifier. Default: trip_001
+
+    Behavior:
+        - Ensures the output directory exists (unless writing to stdout).
+        - Writes one JSON object per line.
+        - Prints a count summary to stderr on completion.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="normal", choices=["normal", "smooth", "aggressive"])
     parser.add_argument("--duration", type=int, default=60, help="Duration (seconds)")
@@ -89,7 +157,6 @@ def main():
     n = args.duration * args.hz
     t0 = time.time()
 
-    # ensure directory
     if args.out != "-":
         Path(os.path.dirname(args.out)).mkdir(parents=True, exist_ok=True)
 
@@ -106,6 +173,7 @@ def main():
             sink.close()
 
     print(f"wrote {n} records to {args.out}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

@@ -1,8 +1,28 @@
-# save as bin/train_lgbm.py (or adapt your evaluator)
 import json, joblib, pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from lightgbm import LGBMRegressor
+
+"""
+Train a LightGBM regressor on simulated telematics features and persist the model.
+
+Behavior:
+  - Loads training features from data/training/features.csv.
+  - Splits into train/validation (75/25).
+  - Fits an LGBMRegressor with sensible defaults for a strong baseline.
+  - Saves the trained model to models/lgbm_risk.joblib.
+  - Writes the feature ordering to models/gbm_risk_features.json.
+
+Usage:
+  python bin/train_lgbm.py
+
+Inputs:
+  data/training/features.csv  # one row per trip with 'target' and engineered features
+
+Outputs:
+  models/lgbm_risk.joblib
+  models/gbm_risk_features.json
+"""
 
 EXCLUDE = {"trip_id","driver_id","mode","target"}
 df = pd.read_csv("data/training/features.csv")
