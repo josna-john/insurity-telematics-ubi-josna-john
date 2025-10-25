@@ -3,7 +3,6 @@ pandas
 scikit-learn
 xgboost
 catboost
-lightgbm
 scipy
 pyyaml
 fastapi

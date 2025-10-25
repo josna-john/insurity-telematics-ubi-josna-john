@@ -213,41 +213,24 @@ python -m src.models.evaluate --data .\data\training\features.csv --outdir .\doc
 
 #### Artifacts:
 
-![CatBoost vs LightGBM (baseline)](docs/metrics/model_comparison.csv) 
 ![Residuals vs prediction](docs/metrics/residuals.png) — residuals vs prediction
 ![Risk score distribution](docs/metrics/score_distribution.png) — predicted risk histogram
 ![Calibration curve](docs/metrics/calibration.png) — regression reliability curve
 ![CatBoost feature importance](docs/metrics/feature_importance.png) — CatBoost gain importances
 
-**Summary**: CatBoost and LightGBM perform similarly; on this set LightGBM is slightly better on RMSE/R². We serve CatBoost for monotonic constraints + tight SHAP explainability and present LightGBM as a baseline.
-
-### Why we also explored LightGBM
-
-We trained a **LightGBM** baseline to ensure results weren’t model-specific and to choose the best fit for UBI constraints. On this synthetic split, LightGBM slightly edged CatBoost on RMSE/R²—useful signal that our features are robust across modern tree learners. We nevertheless **serve CatBoost** for the following governance and stability reasons:
-
-- **Monotone smoothness for pricing:** CatBoost’s **symmetric (oblivious) trees** plus monotone constraints produce **globally consistent, smoother partial effects** (e.g., more hard braking → higher risk everywhere), reducing edge-case flips and pricing cliffs.
-- **Stability across refits:** CatBoost’s **ordered boosting** lowers leakage and variance on small/medium tabular data, yielding **more stable fits** with less hyper-tuning—important for premium stability across model refreshes.
-- **Explainability that holds up:** With the above training regime, SHAP reason codes tend to be **more consistent across retrains**, aiding customer transparency and internal review.
-- **Operational parity, simpler artifact:** CPU latency is comparable; CatBoost ships as a single `.cbm` with straightforward `load_model()` and our monotone constraints/SHAP already wired.
-
-**Future path:** Keep both models in CI as A/B candidates and monitor on real data; if LightGBM consistently outperforms under production distributions, the service can swap via a loader flag. Optionally add **isotonic calibration** if reliability gaps appear in the wild.
+A CSV with metric values is saved to `docs/metrics/model_comparison.csv` (CatBoost-only).
 
 
+### Why CatBoost for UBI risk & pricing
 
-## Modeling notes (why these choices)
+* **Monotone by design:** Easy, explicit **monotonic constraints** ensure core safety signals (hard braking, speeding exposure, jerk, cornering) can’t accidentally *lower* risk. That’s regulator-friendly and avoids pricing cliffs.
+* **Smoother partial effects:** CatBoost’s **symmetric (oblivious) trees** produce globally consistent, smooth responses—less edge-case flipping, more stable premiums across the range.
+* **Leakage-resistant training:** **Ordered boosting** reduces target leakage and variance on small/medium tabular data, yielding **more stable refits** with minimal hyper-tuning—key for premium stability over time.
+* **Explainability that survives retrains:** With monotone constraints + ordered boosting, **SHAP reason codes** tend to stay directionally consistent across retrains, making customer explanations and internal reviews simpler.
+* **Operationally simple:** Ships as a single **`.cbm`** artifact, fast CPU inference, clean `load_model()` API, and native support for **TreeExplainer/SHAP**—great for services and dashboards.
+* **Strong accuracy without fragility:** Competitive with other GBDT libraries on tabular problems while being less sensitive to parameter twiddling—ideal for a production pricing pipeline that must be **accurate *and* dependable**.
+* **Pricing-ready outputs:** The stable, monotone risk score plugs neatly into the **GLM-style pricing** curve (caps/floors, slope, pivot), giving you defendable, elastic premiums with clear guardrails.
 
-* **Risk model:** CatBoost GBM with **monotonic constraints** so known risky behaviors (hard brake rate, speeding exposure, jerk, cornering) can **never** reduce risk. This balances accuracy with regulatory expectations.
-* **Explainability:** SHAP global summary & per-trip contributors + returned top contributors in API.
-* **Pricing:** Simple, defensible GLM-style mapping with guardrails; interactive **slope** (elasticity) and **pivot** (break-even risk).
-* **Data:** Only simulator in repo (no PII). Weather/night exposure features show how exogenous risk context is incorporated.
-
----
-
-## Evaluation
-
-* **Predictive:** RMSE / R² on held-out simulated set (printed during training).
-* **Reliability:** Monotone constraints + SHAP direction checks.
-* **Operational:** Fast CPU inference (ms), micro-batch friendly; `/score/stream` shows low-latency updates.
 
 ---
 
@@ -255,7 +238,7 @@ We trained a **LightGBM** baseline to ensure results weren’t model-specific an
 
 ### FastAPI on **Render**
 
-Add these files (already included):
+Files included:
 
 * `Procfile`
 

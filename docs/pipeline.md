@@ -1,105 +1,153 @@
-# Telematics UBI POC  System Design
+# Telematics UBI POC — System Design
+
+This document reflects what’s actually implemented in the repo (CatBoost GBM + monotone constraints; GLM-style pricing; FastAPI + Streamlit).
 
 ## 1) Goals
-- Capture raw telematics (speed, accel_long, accel_lat, jerk, heading, gps, time-of-day, road/weather context).
-- Clean & aggregate into interpretable features (hard brakes / 100 km, night % miles, speeding exposure).
-- Learn driving-behavior embeddings from short windows (530s) via a light sequence encoder.
-- Score risk with a calibrated GBM using (aggregates + embeddings)  risk_score in [0, 1].
-- Price with GLM/Tweedie using standard rating factors + risk_score for regulator-friendly explainability.
-- Expose a FastAPI endpoint and a simple dashboard to show trip feedback + gamified badges.
+- Ingest raw telematics (speed/accels/jerk/heading/GPS + time-of-day, road, weather).
+- Validate schema and types; keep the pipeline **explainable** and **auditable**.
+- Engineer interpretable aggregates (event rates, speed/jerk stats, context shares).
+- Train a **CatBoost GBM** risk model with **monotonic constraints**.
+- Map risk → premium via **GLM-style curve** (caps/floors, slope, pivot).
+- Expose a scoring **API (FastAPI)** and a simple **dashboard (Streamlit)** with badges and SHAP contributors.
 
-## 2) Architecture (high-level)
-Ingest (stream/samples)  Clean/Validate  Feature/Windowing  
-[Behavior Encoder (CNN-LSTM or small Transformer)  embedding]  
-GBM Risk Model  Calibration  Pricing (GLM/Tweedie)  API  Dashboard
+---
+
+## 2) Architecture (high level)
+
+```bash
+
+Simulator
+  ↓
+Validation (fast checks)
+  ↓
+Feature Engineering (aggregates)
+  ↓
+CatBoost Risk (monotone)
+  ↓
+SHAP Explainability
+  ↓
+GLM-style Pricing (caps/floors, slope, pivot)
+  ↓
+FastAPI (/score/*) + Streamlit UI
+
+```
+
+---
 
 ## 3) Data Schemas
 
-### 3.1 Raw telemetry record (JSONL / CSV)
-- timestamp: ISO8601
-- speed_mps: float
-- accel_long_mps2: float
-- accel_lat_mps2: float
-- jerk_mps3: float
-- heading_deg: float
-- gps_lat: float
-- gps_lon: float
-- time_of_day: {morning, midday, evening, night}
-- road_type: {highway, city, rural}
-- weather: {clear, rain, snow, fog}
-- driver_id, trip_id: strings
+### 3.1 Raw telemetry (JSONL)
+See `docs/data.md` for the full list and units.
 
-### 3.2 Windowed (e.g., 10s windows @ 1020 Hz)
-- sequences shaped (T, features), T=100200
-- label (if supervised): behavior class (normal/smooth/aggressive) or proxy risk
+### 3.2 Derived features (per trip)
+Produced by `src/features/featurize.py`:
+- Trip metadata: `trip_id`, `driver_id`, `n_records`, `hz`, `duration_sec`, `dist_km`
+- Events & rates per 100 km: `hard_brakes`, `harsh_accels`, `cornering_events`,
+  `hard_brake_rate_100km`, `harsh_accel_rate_100km`, `corner_rate_100km`
+- Speed stats: `avg_speed`, `p50_speed`, `p95_speed`, `std_speed`
+- Jerk stats: `jerk_mean`, `jerk_p95`
+- Context shares: `speeding_exposure`, `idle_share`, `night_mile_share`, `rain_mile_share`
 
-### 3.3 Aggregates per trip/day
-- hard_brake_rate (events / 100 km)
-- harsh_accel_rate (events / 100 km)
-- cornering_rate (events / 100 km)
-- speeding_exposure (% time > posted limit proxy)
-- night_mile_share (%)
-- rain_mile_share (%)
-- avg_speed_p50/p95, std_speed, idle_share, etc.
+### 3.3 Training table
+`data/training/features.csv` contains one row per simulated trip plus:
+- `mode` ∈ {smooth, normal, aggressive}
+- `target` (proxy risk): smooth=0.1, normal=0.4, aggressive=0.9
+
+---
 
 ## 4) Modeling
 
-### 4.1 Behavior Encoder (lightweight)
-- Window length: 1030 s; stride: 510 s
-- Model: 1D CNN  BiLSTM (or small Transformer with 23 layers)
-- Output: 32128D embedding per window; aggregate to trip/day via mean/max-pool
+### 4.1 Risk model (implemented)
+- **Algorithm:** CatBoostRegressor (GBM) with **monotonic constraints** on safety features (e.g., more hard braking → never reduces risk).
+- **Train/Val split:** 75/25
+- **Artifacts:** `models/gbm_risk.cbm` + `models/gbm_risk_features.json`
+- **Explainability:** SHAP (global summary + per-trip “top contributors”)
+- **Command:**  
+  `python -m src.models.train_gbm --data data/training/features.csv --model-out models/gbm_risk.cbm --featnames-out models/gbm_risk_features.json`
 
-### 4.2 Risk Scorer
-- Model: Gradient boosting (CatBoost/XGBoost) with monotonic constraints where sensible
-- Inputs: Engineered aggregates + encoder embeddings
-- Output: risk_score  [0,1]; calibrated with isotonic or Platt scaling
-- Explainability: SHAP for global & per-feature; attention/grad-cam for encoder windows
+### 4.2 Pricing (GLM-style mapping)
+- **Formula:** `factor = clamp(exp(intercept + slope * logit(risk)), floor, cap)`
+- **Premium:** `premium = base_premium * factor`
+- **Controls:** floor (discount cap), cap (surcharge cap), slope (elasticity), pivot (factor≈1 at pivot via intercept).
+- **Docs plots:** `docs/pricing/price_curve_*.png`
 
-### 4.3 Pricing (actuarial alignment)
-- GLM/Tweedie: Premium = Base * exp(�? * rating_factors + ? * f(risk_score))
-- Keeps pricing transparent for filings while leveraging behavior via risk_score
-- Sensitivity curves documented; guardrails (caps/floors, smoothing)
+---
 
-## 5) Real-time Driver Feedback (POC)
-- Stream simulator  near-real-time scoring stub (batch in this POC; can be micro-batched)
-- Feedback rules: show alerts when thresholds exceeded (hard_brake streaks, speeding exposure)
-- Gamification: weekly safety score, streaks, badges
+## 5) Real-time scoring (POC)
+- `/score/stream` buffers session records in-memory and rescoring on each chunk.
+- Useful for demos of rolling risk and the pricing curve; not a production session store.
+
+---
 
 ## 6) APIs (FastAPI)
-- POST /score/trip  : upload trip (JSON/CSV)  risk_score + top drivers
-- GET  /driver/{id}/summary : risk trends, badge status
-- GET  /health     : service health
+- **`GET /health`** → `{"status":"ok"}`
+- **`POST /score/trip`** (JSON array of records) → `risk_score`, `top_contributors`, `badges`
+- **`POST /score/jsonl`** (raw JSONL text) → same response
+- **`POST /score/stream`** (sessioned) → `session_id`, `n_records`, rolling `risk_score` etc.
+- **`DELETE /score/stream/{session_id}`** → clears buffer  
+Security: optional `X-API-Key` header (set `API_KEY` env var).
+
+---
 
 ## 7) Evaluation
-- Predictive: AUC/PR, Brier score, calibration plots (risk_score vs. proxy labels)
-- Operational: latency, throughput (records/sec), memory/CPU footprints
-- Business proxy: lift curves vs. GLM-only baseline
+Run:
+```bash
+python -m src.models.evaluate --data data/training/features.csv --outdir docs/metrics
+```
 
-## 8) Security & Privacy (POC-aware)
-- Pseudonymize driver_id; do not store precise GPS in repo (only samples)
-- Config via .env; no secrets in code
-- Data retention: small anonymized samples for demo only
+Artifacts:
+
+* `docs/metrics/residuals.png` — residuals vs prediction
+* `docs/metrics/score_distribution.png` — validation score histogram
+* `docs/metrics/calibration.png` — regression reliability curve
+* `docs/metrics/feature_importance.png` (+ `.csv`) — CatBoost gain importance
+* `docs/metrics/model_comparison.csv` — leaderboard (CatBoost only in final submission)
+
+---
+
+## 8) Security & Privacy (POC)
+
+* **Simulated data only** in repo; keep real telemetry external and secured.
+* Optional API key via `X-API-Key`.
+* For production: consented collection, encryption in transit/at rest, role-based access, short retention of raw events.
+
+---
 
 ## 9) Project Layout
+
+```
 /src
-  config.py
-  /data        : loaders/validators
-  /features    : feature engineering + windowing
-  /models      : encoders + GBM + pricing glue
-  /api         : FastAPI app
-/bin
-  simulate_stream.py   # sample generator (JSONL/CSV)
-/docs
-  pipeline.md, data.md, diagrams (later)
-/data
-  samples/  # tiny anonymized slices; large data excluded
-/models
-  saved/ or download pointers
+  /api            FastAPI app & auth
+  /data           Validation & loaders
+  /features       Feature engineering
+  /gamification   Badges
+  /models         Training, scoring, pricing, explainability
+/bin               CLIs (simulate, generate dataset, price, mid-risk helpers)
+/data              tiny samples (gitignored except small examples)
+/models            model artifacts (.cbm, feature order)
+/docs              metrics, explain, pricing, screens
+```
 
-## 10) Run Flow (POC)
-1) Generate a sample trip: python .\\bin\\simulate_stream.py --mode aggressive --duration 60 --hz 10
-2) (Next step) Clean + featurize: python -m src.features.featurize --input data\\samples\\trip.jsonl
-3) (Later) Train encoder/GBM; save models to /models
-4) Start API: uvicorn src.api.app:app --reload
-5) Score endpoint or upload via dashboard.
+---
 
+## 10) Run Flow (end-to-end)
+
+1. **Simulate a trip**
+   `python bin/simulate_stream.py --mode aggressive --duration 60 --hz 10 --out data/samples/trip.jsonl`
+
+2. **Featurize (optional one-off)**
+   `python -m src.features.featurize --input data/samples/trip.jsonl`
+
+3. **Train model**
+   `python -m src.models.train_gbm --data data/training/features.csv --model-out models/gbm_risk.cbm --featnames-out models/gbm_risk_features.json`
+
+4. **Explainability artifacts**
+   `python -m src.models.explain --train-data data/training/features.csv --model models/gbm_risk.cbm --featnames models/gbm_risk_features.json --trip data/samples/trip_eval.jsonl --outdir docs/explain`
+
+5. **Run API**
+   `uvicorn src.api.app:app --reload` → open `/docs`
+
+6. **Streamlit UI**
+   `streamlit run streamlit_app.py` → upload a JSONL, view risk/premium/badges/SHAP.
+
+```

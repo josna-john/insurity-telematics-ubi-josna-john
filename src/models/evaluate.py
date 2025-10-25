@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -14,11 +13,11 @@ from numpy.typing import NDArray
 from typing import Tuple
 
 """
-Model evaluation utilities for the telematics risk scorer.
+Model evaluation utilities for the telematics risk scorer (CatBoost-only).
 
 This module:
   - Loads a training CSV and constructs design matrices.
-  - Trains and evaluates CatBoost (primary) and optionally LightGBM baselines.
+  - Trains and evaluates CatBoost (primary).
   - Reports RMSE and R² on a validation split.
   - Emits diagnostic plots: residuals, score distribution, calibration curve,
     and CatBoost global feature importance (gain) with a companion CSV.
@@ -29,26 +28,11 @@ def safe_rmse(y_true, y_pred) -> float:
     """
     Compute RMSE, compatible with older scikit-learn versions that lack
     the `squared` argument in `mean_squared_error`.
-
-    Args:
-        y_true: Ground-truth array-like.
-        y_pred: Predicted array-like.
-
-    Returns:
-        float: Root mean squared error.
     """
     try:
         return mean_squared_error(y_true, y_pred, squared=False)
     except TypeError:
         return float(np.sqrt(mean_squared_error(y_true, y_pred)))
-
-
-# Optional LightGBM baseline
-try:
-    from lightgbm import LGBMRegressor
-    HAS_LGBM = True
-except Exception:
-    HAS_LGBM = False
 
 
 EXCLUDE = {"trip_id", "driver_id", "mode", "target"}
@@ -58,12 +42,8 @@ def load_xy(csv_path: str):
     """
     Load features and target from a training CSV.
 
-    Args:
-        csv_path: Path to CSV produced by the dataset generator.
-
     Returns:
-        Tuple[pd.DataFrame, np.ndarray, np.ndarray, list[str]]:
-            (full DataFrame, X matrix, y vector, feature names in order)
+        (full DataFrame, X matrix, y vector, feature names in order)
     """
     df = pd.read_csv(csv_path)
     y = df["target"].values.astype(float)
@@ -81,14 +61,6 @@ def catboost_fit(
 ) -> Tuple[CatBoostRegressor, NDArray[np.floating]]:
     """
     Fit a CatBoostRegressor and return predictions on the validation set.
-
-    Args:
-        Xtr, ytr: Training features and target.
-        Xva, yva: Validation features and target.
-        feat_names: Ordered feature names (unused by CatBoost here, but kept for symmetry).
-
-    Returns:
-        (model, preds_on_val)
     """
     model = CatBoostRegressor(
         loss_function="RMSE",
@@ -103,46 +75,10 @@ def catboost_fit(
     return model, pred
 
 
-def lightgbm_fit(
-    Xtr: NDArray[np.floating],
-    ytr: NDArray[np.floating],
-    Xva: NDArray[np.floating],
-    yva: NDArray[np.floating],
-    feat_names: list[str],
-) -> Tuple["LGBMRegressor", NDArray[np.floating]]:
-    """
-    Fit an LGBMRegressor baseline and return predictions on the validation set.
-
-    Args:
-        Xtr, ytr: Training features and target.
-        Xva, yva: Validation features and target.
-        feat_names: Ordered feature names (unused directly by this baseline).
-
-    Returns:
-        (model, preds_on_val)
-    """
-    model = LGBMRegressor(
-        n_estimators=600,
-        learning_rate=0.05,
-        max_depth=-1,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        random_state=42,
-    )
-    model.fit(Xtr, ytr)
-    pred = np.asarray(model.predict(Xva), dtype=float).reshape(-1)
-    return model, pred
-
-
 def calibration_plot(y, pred, out_png):
     """
     Plot a regression-style calibration curve by binning predictions and
     comparing mean predicted vs. mean actual.
-
-    Args:
-        y: Ground-truth values (validation).
-        pred: Predicted values (validation).
-        out_png: Output PNG path.
     """
     df = pd.DataFrame({"y": y, "p": np.clip(pred, 0, 1)})
     df["bin"] = pd.qcut(df["p"], q=10, duplicates="drop")
@@ -161,11 +97,6 @@ def calibration_plot(y, pred, out_png):
 def residuals_plot(y, pred, out_png):
     """
     Plot residuals (y - pred) versus predictions to diagnose bias/heteroscedasticity.
-
-    Args:
-        y: Ground-truth values (validation).
-        pred: Predicted values (validation).
-        out_png: Output PNG path.
     """
     res = y - pred
     plt.figure(figsize=(5, 4))
@@ -182,10 +113,6 @@ def residuals_plot(y, pred, out_png):
 def dist_plot(pred, out_png):
     """
     Plot the distribution of validation predictions (clipped to [0,1]).
-
-    Args:
-        pred: Predicted values (validation).
-        out_png: Output PNG path.
     """
     plt.figure(figsize=(5, 4))
     plt.hist(np.clip(pred, 0, 1), bins=30)
@@ -200,16 +127,6 @@ def dist_plot(pred, out_png):
 def catboost_importance_plot(model, feat_names, out_png, top=20):
     """
     Render CatBoost global feature importance (gain) and write a companion CSV.
-
-    Args:
-        model: Fitted CatBoostRegressor.
-        feat_names: Ordered list of feature names.
-        out_png: Output PNG path for the bar plot.
-        top: Number of top features to display.
-
-    Side Effects:
-        - Saves PNG (barh gain plot).
-        - Saves CSV with feature, gain, and percentage share.
     """
     try:
         imps = np.asarray(model.get_feature_importance(), dtype=float)
@@ -243,17 +160,11 @@ def catboost_importance_plot(model, feat_names, out_png, top=20):
 
 def main():
     """
-    CLI to train/evaluate models and emit diagnostics.
+    CLI to train/evaluate CatBoost and emit diagnostics.
 
     Args (via argparse):
         --data: Path to features CSV (default: data/training/features.csv).
         --outdir: Directory to write plots and comparison CSV (default: docs/metrics).
-
-    Behavior:
-        - Train/val split (25% val).
-        - Fit CatBoost and (if available) LightGBM.
-        - Print RMSE and R².
-        - Write diagnostic plots and a small leaderboard CSV.
     """
     import argparse
     ap = argparse.ArgumentParser()
@@ -270,25 +181,15 @@ def main():
     rmse_cb = safe_rmse(yva, p_cb)
     r2_cb = r2_score(yva, p_cb)
 
-    rmse_lgb = r2_lgb = None
-    if HAS_LGBM:
-        lgb, p_lgb = lightgbm_fit(Xtr, ytr, Xva, yva, fe)
-        rmse_lgb = safe_rmse(yva, p_lgb)
-        r2_lgb = r2_score(yva, p_lgb)
-
     residuals_plot(yva, p_cb, outdir / "residuals.png")
     dist_plot(p_cb, outdir / "score_distribution.png")
     calibration_plot(yva, p_cb, outdir / "calibration.png")
     catboost_importance_plot(cb, fe, outdir / "feature_importance.png")
 
     rows = [{"model": "CatBoost", "rmse": rmse_cb, "r2": r2_cb}]
-    if rmse_lgb is not None:
-        rows.append({"model": "LightGBM", "rmse": rmse_lgb, "r2": r2_lgb})
     pd.DataFrame(rows).to_csv(outdir / "model_comparison.csv", index=False)
 
     print(f"CatBoost  RMSE={rmse_cb:.4f}  R2={r2_cb:.4f}")
-    if rmse_lgb is not None:
-        print(f"LightGBM RMSE={rmse_lgb:.4f}  R2={r2_lgb:.4f}")
     print(f"Wrote plots to {outdir}")
 
 
