@@ -18,11 +18,11 @@
 
 ```bash
 /src
-/data            # loaders & validation
-/features        # feature engineering + featurize_trip
-/models          # training, explainability, pricing, constraints
-/api             # FastAPI service (app.py) + security
-/gamification    # badges rules
+  /data            # loaders & validation
+  /features        # feature engineering + featurize_trip
+  /models          # training, explainability, pricing, constraints
+  /api             # FastAPI service (app.py) + security
+  /gamification    # badges rules
 /bin               # CLIs (simulate, dataset, price, mid-risk makers)
 /models            # saved model + feature order (generated)
 /data              # tiny samples & derived outputs (gitignored except small samples)
@@ -68,6 +68,8 @@ python -m src.models.explain --train-data .\data\training\features.csv ^
 #### SHAP (this trip)
 ![Per-trip top contributors](docs/explain/trip_eval_top_shap.png)
 
+*The API returns the top contributors; Streamlit displays them with a feature snapshot for transparency.*
+
 
 ### 3. API (FastAPI) — local run
 
@@ -78,10 +80,11 @@ $env:API_KEY="change-me"
 uvicorn src.api.app:app --reload
 # Swagger at http://127.0.0.1:8000/docs
 # All requests must include header: X-API-Key: change-me  (if API_KEY is set)
+# If API_KEY is set and the header is missing/incorrect, the API returns 401.
 
 ```
 
-## One-line test:
+#### One-line test:
 ```bash
 
 $lines = Get-Content .\data\samples\trip_eval.jsonl -TotalCount 120 | % { $_ | ConvertFrom-Json }
@@ -166,18 +169,12 @@ python -m src.models.price_curve --base-premium 120 --floor 0.75 --cap 1.5 --slo
 
 ### Pricing curves
 
-![Premium factor vs risk](docs/pricing/price_curve_factor.png)
-![Premium ($) vs risk](docs/pricing/price_curve_premium.png)
-
-```html
-
 <p align="center">
   <img src="docs/pricing/price_curve_factor.png" alt="Factor vs risk" width="45%">
   &nbsp;&nbsp;
   <img src="docs/pricing/price_curve_premium.png" alt="Premium vs risk" width="45%">
 </p>
 
-```
 
 *Figure: GLM-style mapping; guardrails (floor/cap) indicated with dashed lines.*
 
@@ -220,16 +217,18 @@ python -m src.models.evaluate --data .\data\training\features.csv --outdir .\doc
 
 A CSV with metric values is saved to `docs/metrics/model_comparison.csv` (CatBoost-only).
 
-
+---
 ### Why CatBoost for UBI risk & pricing
 
-* **Monotone by design:** Easy, explicit **monotonic constraints** ensure core safety signals (hard braking, speeding exposure, jerk, cornering) can’t accidentally *lower* risk. That’s regulator-friendly and avoids pricing cliffs.
-* **Smoother partial effects:** CatBoost’s **symmetric (oblivious) trees** produce globally consistent, smooth responses—less edge-case flipping, more stable premiums across the range.
-* **Leakage-resistant training:** **Ordered boosting** reduces target leakage and variance on small/medium tabular data, yielding **more stable refits** with minimal hyper-tuning—key for premium stability over time.
-* **Explainability that survives retrains:** With monotone constraints + ordered boosting, **SHAP reason codes** tend to stay directionally consistent across retrains, making customer explanations and internal reviews simpler.
-* **Operationally simple:** Ships as a single **`.cbm`** artifact, fast CPU inference, clean `load_model()` API, and native support for **TreeExplainer/SHAP**—great for services and dashboards.
-* **Strong accuracy without fragility:** Competitive with other GBDT libraries on tabular problems while being less sensitive to parameter twiddling—ideal for a production pricing pipeline that must be **accurate *and* dependable**.
-* **Pricing-ready outputs:** The stable, monotone risk score plugs neatly into the **GLM-style pricing** curve (caps/floors, slope, pivot), giving you defendable, elastic premiums with clear guardrails.
+* **Monotone by design:** We can impose **monotonic constraints** so core safety signals (e.g., hard-brake rate, speeding exposure, jerk, cornering) never *lower* risk. That’s regulator-friendly and helps avoid pricing cliffs. CatBoost exposes this natively via `monotone_constraints`. (see [docs/research.md](docs/research.md))
+* **Leakage-resistant training:** CatBoost’s **ordered boosting** combats prediction-shift/target leakage (common in boosting on small/medium tabular data), giving **more stable refits** with minimal hyper-tuning—great for premium stability. (see [docs/research.md](docs/research.md))
+* **Smooth, stable partial effects:** CatBoost uses symmetric (“oblivious”) trees, which tend to yield globally consistent responses—less edge-case flipping, more stable premiums across the range (helpful when mapping risk → price). (see [docs/research.md](docs/research.md))
+* **Explainability that survives retrains:** With monotone constraints + ordered boosting, **SHAP reason codes** tend to remain directionally consistent across refits, simplifying customer explanations and internal reviews. (Mechanism via constraints; we visualize with SHAP.) (see [docs/research.md](docs/research.md))
+* **Operationally simple:** Single **`.cbm`** artifact, fast CPU inference, clean `load_model()`; widely used with **TreeExplainer/SHAP** in services and dashboards. (See our API + Streamlit.)
+* **Strong accuracy on tabular:** Large independent benchmarks show **tree-boosting remains state-of-the-art on tabular/medium-sized data**, even after extensive tuning of deep models—matching the telematics feature regime (speeds, counts, rates). (see [docs/research.md](docs/research.md))
+* **Accepted in UBI studies:** Insurance/UBI literature frequently applies gradient-boosting families to telematics for claim propensity/frequency and pricing signals, outperforming GLM-only baselines while remaining compatible with actuarial workflows. Our two-stage design (GBM risk → GLM-style pricing) follows this practice. (see [docs/research.md](docs/research.md))
+
+*We tried alternatives and kept CatBoost for its accuracy, robust tabular bias, SHAP-friendly explanations, and native monotonic constraints.*
 
 
 ---
@@ -286,23 +285,23 @@ Connect repo → pick `streamlit_app.py` → deploy.
 ## Screens (videos)
 
 1. Swagger `/docs` showing 200 from `/score/trip`.
-![Swagger scoring success](docs/screens/swagger_score_trip.mp4)
 
-```html
 <!-- Swagger scoring success -->
 <video src="docs/screens/swagger_score_trip.mp4" controls muted loop playsinline width="800">
   Your browser does not support the video tag.
 </video>
-```
 
 2. Streamlit **Risk / Premium / Badges** header + **Top contributors** chart.
-![Streamlit demo](docs/screens/streamlit_demo.mp4)
-```html
+
 <!-- Streamlit demo -->
 <video src="docs/screens/streamlit_demo.mp4" controls muted loop playsinline width="800">
   Your browser does not support the video tag.
 </video>
-```
+
+--- 
+## Research / rationale
+
+See **[docs/research.md](docs/research.md)** for citations backing CatBoost (ordered boosting, monotonic constraints) and tree-boosting SOTA on telematics/tabular data.
 
 ---
 
@@ -334,4 +333,4 @@ MIT (see `LICENSE`)
 
 ---
 
-**Contact:** Josna John — thanks for reviewing!
+**Contact:** Josna John (jojohn@ucsd.edu) — thanks for reviewing!
