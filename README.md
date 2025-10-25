@@ -29,6 +29,31 @@
 /docs              # explainability & pricing plots, privacy note
 
 ```
+---
+## Evaluation Summary
+
+**Chosen approach (inputs → outcome):**  
+We model *tabular telematics* features (e.g., p95 speed, hard-brake rate/100km, jerk, time-of-day shares) with a **CatBoost GBM** using **monotonic constraints** so risky signals cannot reduce risk. The bounded **GLM-style pricing** then maps the risk score into a premium factor with **floor/cap** guardrails and **elasticity** (slope) around a **pivot** risk. This two-stage design balances accuracy, interpretability, and filing-friendliness.
+
+**Accuracy & reliability (risk scoring):**  
+Run `python -m src.models.evaluate --data .\data\training\features.csv --outdir .\docs\metrics` to produce:
+- `docs/metrics/residuals.png` (error pattern check)  
+- `docs/metrics/score_distribution.png` (risk range coverage)  
+- `docs/metrics/calibration.png` (regression reliability – predicted vs actual)  
+- `docs/metrics/feature_importance.png` (gain importances)  
+- `docs/metrics/model_comparison.csv` (CatBoost-only)
+
+**Performance & scalability (processing system):**  
+- **Architecture:** Stateless FastAPI service; model loaded once at startup; synchronous CPU inference (CatBoost is fast on CPU).  
+- **Endpoints:** `/score/trip` (batch), `/score/jsonl` (raw JSONL), `/score/stream` (sessioned streaming with incremental features).  
+- **Throughput:** Micro-batching supported via `/score/trip`; horizontal scale on Render by adding instances; per-process concurrency via Uvicorn workers.  
+- **Latency:** Typical per-trip featurization ≪ 10 ms; inference ≪ 1 ms on modern CPUs for a few dozen features (see quick test below).  
+- **Security:** API key gate (`X-API-Key`) + HTTPS handled by platform.
+
+**Cost efficiency & ROI (vs traditional):**  
+- **Operational costs:** CPU-only inference, single `.cbm` artifact, small memory footprint → low cloud cost.  
+- **Business impact (illustrative):** If UBI adoption reduces high-risk miles (speeding/night) by ~5–10%, even a 1–2% drop in claim frequency or severities materially improves loss ratio. Guardrails (floor/cap) limit volatility and customer bill shock, improving retention while preserving risk differentiation.  
+- **Actuarial fit:** Monotone constraints + bounded GLM-style factor produce stable, defensible premiums compatible with traditional filings.
 
 ---
 
@@ -81,6 +106,30 @@ uvicorn src.api.app:app --reload
 # Swagger at http://127.0.0.1:8000/docs
 # All requests must include header: X-API-Key: change-me  (if API_KEY is set)
 # If API_KEY is set and the header is missing/incorrect, the API returns 401.
+
+```
+#### Quick perf sanity (local)
+```python
+# .venv python REPL
+import json, time
+from pathlib import Path
+from src.features.featurize import featurize_trip
+from catboost import CatBoostRegressor
+
+m = CatBoostRegressor(); m.load_model("models/gbm_risk.cbm")
+feat_names = json.loads(Path("models/gbm_risk_features.json").read_text())
+
+trip = Path("data/samples/trip_eval.jsonl")
+feats = featurize_trip(trip)
+row = [[feats[n] for n in feat_names]]
+
+# warmup
+for _ in range(10): _ = m.predict(row)
+
+t0 = time.time()
+for _ in range(2000): _ = m.predict(row)
+dt = time.time() - t0
+print(f"2000 inferences on CPU: {dt:.3f}s  (~{2000/dt:.0f} preds/sec)")
 
 ```
 
@@ -291,12 +340,20 @@ Connect repo → pick `streamlit_app.py` → deploy.
   Your browser does not support the video tag.
 </video>
 
+<p>If your viewer does not render inline MP4, open the file directly:
+<a href="docs/screens/swagger_score_trip.mp4">swagger_score_trip.mp4</a></p>
+
+
 2. Streamlit **Risk / Premium / Badges** header + **Top contributors** chart.
 
 <!-- Streamlit demo -->
 <video src="docs/screens/streamlit_demo.mp4" controls muted loop playsinline width="800">
   Your browser does not support the video tag.
 </video>
+
+<p>If your viewer does not render inline MP4, open the file directly:
+<a href="docs/screens/streamlit_demo.mp4">streamlit_demo.mp4</a></p>
+
 
 --- 
 ## Research / rationale
@@ -324,6 +381,15 @@ python .\bin\simulate_stream.py --mode aggressive --duration 60 --hz 10 --out .\
 python .\bin\make_midrisk_blend.py --target 0.50 --tol 0.02 --out .\data\samples\trip_mid_blend.jsonl
 
 ```
+---
+
+## Future work
+
+- **Contextual risk**: enrich features with live weather, traffic, and road hazard signals.
+- **Longitudinal stability**: per-driver smoothing / credibility weighting across trips.
+- **Calibration**: deploy isotonic regression per segment (kept in repo as `iso_calibrator.joblib`).
+- **A/B guardrails**: production flags for floor/cap changes to manage elasticity rollouts.
+- **Mobile SDK**: on-device smoothing and offline buffering for real GPS/IMU streams.
 
 ---
 
@@ -334,3 +400,4 @@ MIT (see `LICENSE`)
 ---
 
 **Contact:** Josna John (jojohn@ucsd.edu) — thanks for reviewing!
+---
