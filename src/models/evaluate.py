@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.isotonic import IsotonicRegression
+# from sklearn.isotonic import IsotonicRegression
 
 from catboost import CatBoostRegressor, Pool
 

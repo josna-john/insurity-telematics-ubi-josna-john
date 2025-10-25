@@ -62,11 +62,12 @@ python -m src.models.explain --train-data .\data\training\features.csv ^
   --trip .\data\samples\trip_eval.jsonl --outdir .\docs\explain
 
 ```
+#### SHAP (global)
+![Global SHAP summary](docs/explain/global_shap_summary.png)
 
-Include in submission:
+#### SHAP (this trip)
+![Per-trip top contributors](docs/explain/trip_eval_top_shap.png)
 
-* `docs/explain/global_shap_summary.png`
-* `docs/explain/<trip>_top_shap.png`
 
 ### 3. API (FastAPI) — local run
 
@@ -162,8 +163,24 @@ python -m src.models.price_curve --base-premium 120 --floor 0.75 --cap 1.5 --slo
 
 ```
 # Artifacts:
-#  docs/pricing/price_curve_factor.png
-#  docs/pricing/price_curve_premium.png
+
+### Pricing curves
+
+![Premium factor vs risk](docs/pricing/price_curve_factor.png)
+![Premium ($) vs risk](docs/pricing/price_curve_premium.png)
+
+```html
+
+<p align="center">
+  <img src="docs/pricing/price_curve_factor.png" alt="Factor vs risk" width="45%">
+  &nbsp;&nbsp;
+  <img src="docs/pricing/price_curve_premium.png" alt="Premium vs risk" width="45%">
+</p>
+
+```
+
+*Figure: GLM-style mapping; guardrails (floor/cap) indicated with dashed lines.*
+
 
 
 ### How the pricing stub works (plain English)
@@ -196,11 +213,11 @@ python -m src.models.evaluate --data .\data\training\features.csv --outdir .\doc
 
 #### Artifacts:
 
-* `docs/metrics/model_comparison.csv` — CatBoost vs LightGBM (baseline)
-* `docs/metrics/residuals.png` — residuals vs prediction
-* `docs/metrics/score_distribution.png` — predicted risk histogram
-* `docs/metrics/calibration.png` — regression reliability curve
-* `docs/metrics/feature_importance.png` — CatBoost gain importances
+![CatBoost vs LightGBM (baseline)](docs/metrics/model_comparison.csv) 
+![Residuals vs prediction](docs/metrics/residuals.png) — residuals vs prediction
+![Risk score distribution](docs/metrics/score_distribution.png) — predicted risk histogram
+![Calibration curve](docs/metrics/calibration.png) — regression reliability curve
+![CatBoost feature importance](docs/metrics/feature_importance.png) — CatBoost gain importances
 
 **Summary**: CatBoost and LightGBM perform similarly; on this set LightGBM is slightly better on RMSE/R². We serve CatBoost for monotonic constraints + tight SHAP explainability and present LightGBM as a baseline.
 
@@ -283,16 +300,26 @@ Connect repo → pick `streamlit_app.py` → deploy.
 
 ---
 
-## Screenshots to include
+## Screens (videos)
 
 1. Swagger `/docs` showing 200 from `/score/trip`.
+![Swagger scoring success](docs/screens/swagger_score_trip.mp4)
+
+```html
+<!-- Swagger scoring success -->
+<video src="docs/screens/swagger_score_trip.mp4" controls muted loop playsinline width="800">
+  Your browser does not support the video tag.
+</video>
+```
+
 2. Streamlit **Risk / Premium / Badges** header + **Top contributors** chart.
-3. SHAP figures:
-
-   * `docs/explain/global_shap_summary.png`
-   * `docs/explain/<trip>_top_shap.png`
-
-4. (Optional) `docs/metrics/*.png` and `docs/pricing/*.png`
+![Streamlit demo](docs/screens/streamlit_demo.mp4)
+```html
+<!-- Streamlit demo -->
+<video src="docs/screens/streamlit_demo.mp4" controls muted loop playsinline width="800">
+  Your browser does not support the video tag.
+</video>
+```
 
 ---
 
