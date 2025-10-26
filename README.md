@@ -279,6 +279,18 @@ A CSV with metric values is saved to `docs/metrics/model_comparison.csv` (CatBoo
 
 *We tried alternatives and kept CatBoost for its accuracy, robust tabular bias, SHAP-friendly explanations, and native monotonic constraints.*
 
+---
+
+## What the plots mean (plain English)
+
+* **docs/metrics/residuals.png** — If residuals scatter randomly around zero with no funnel shape, errors are stable across the range.
+* **docs/metrics/score_distribution.png** — Shows whether the model uses the 0–1 space (not collapsed to a narrow band).
+* **docs/metrics/calibration.png** — Binned mean predicted vs actual. Closer to the diagonal means better calibration (risk ~ reality).
+* **docs/metrics/feature_importance.png** — Which features the model relies on most (sanity check vs domain intuition).
+* **docs/explain/global_shap_summary.png** — Directional impact of features overall: long bars = strong influence; color shows high/low feature value effect.
+* **docs/explain/trip_eval_top_shap.png** — Top reasons for this specific trip’s score (customer-facing “why”).
+* **docs/pricing/price_curve_factor.png** — Premium factor vs risk; dashed lines = floor/cap guardrails.
+* **docs/pricing/price_curve_premium.png** — Dollar premium vs risk for your chosen base premium.
 
 ---
 
